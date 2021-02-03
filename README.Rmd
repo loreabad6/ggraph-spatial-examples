@@ -1,44 +1,209 @@
 ---
-title: "Geospatial Network Visualizations using `ggraph`"
+title: "Geospatial Network Visualizations"
+subtitle: "`sfnetworks` meets `ggraph`"
+author: "Lorena Abad"
+date: "`r format(Sys.Date())`"
 output: 
-  html_document:
-    toc: true
-    toc_float: true
-    keep_md: true
+  rmdformats::downcute: default
+  github_document: default
 ---
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  echo = TRUE, messages = F, warnings = F,
+  dev.args = list(bg = 'transparent')
+)
 ```
 
-Showcasing the possibilities of using `ggraph` with a layout that understands geographical space positions via `sf`. These examples use `sfnetworks` and my implementation of `ggraph` still under construction before a PR is possible, and can be installed as:
+```{r color, echo = FALSE, results='asis'}
+# crayon needs to be explicitly activated in Rmd
+options(crayon.enabled = TRUE)
+# Hooks needs to be set to deal with outputs
+# thanks to fansi logic
+old_hooks <- fansi::set_knit_hooks(knitr::knit_hooks,
+which = c("output", "message", "error"))
+```
+
+<center>
+<a href="https://luukvdmeer.github.io/sfnetworks/"><img src="https://raw.githubusercontent.com/luukvdmeer/sfnetworks/master/man/figures/logo.png" width="150px"/></a> `+` <a href="https://ggraph.data-imaginist.com/"><img src="https://raw.githubusercontent.com/thomasp85/ggraph/master/man/figures/logo.png" width="150px"/></a>
+</center>
+
+# What is this about?
+
+This post is to document my personal exploration on how to visualize spatial networks created with `sfnetworks` using `ggraph`. This all started with a [sfnetworks hackathon](https://github.com/sfnetworks/sfnetworks_viz) and should end with a successful PR to `ggraph`. 
+
+I should start by saying, that it is probably a good idea to get familiar with `ggraph` (and `tidygraph` and `sfnetworks` while you are at it!) before going through this post. 
+
+If you are already a `ggraph` + `tidygraph` user and would like to apply the possibilities to the *spatial domain*, then this is definitely a resource for you and a good opportunity to learn about `sfnetworks`!
+
+# What can be done?
+
+There are already several possibilities to use `sfnetworks` and `ggraph` together. *Why?* you may be wondering... well because `ggraph` was built as a way to visualize `tbl_graph`s from `tidygraph`, and guess what? `sfnetwork` sub-classes `tbl_graph` so basically you can do all sort of crazy graph representations with an `sfnetwork` already. 
+
+The real aim of this integration is to allow you to do all this crazy graph representations **+** graph representations in geographical space! Not everything is possible yet, and you will see below some limitations. 
+
+For now, I will illustrate how with the current *status quo*, we can already integrate `sfnetworks` and `ggraph` for spatial network visualizations. So let's get started!
+
+# The Three Pillars
+
+We need to start with **three** main concepts, the essential elements to create any `ggraph` visualization:
+
+```{r, include = F}
+library(ggplot2)
+library(ggimage)
+```
+
+```{r, echo = F, fig.height = 2.5, fig.width = 8, fig.align = "center"}
+pillars = "https://www.pngfind.com/pngs/m/78-788780_pillars-png-3-pillars-clip-art-transparent-png.png"
+
+labs = data.frame(
+  l = c("Layouts", "Nodes", "Edges"), 
+  x = c(1.335, 2, 2.665),
+  y = c(1, 1, 1),
+  i = rep("https://i.pinimg.com/originals/e3/29/6d/e3296d231b926f7fde8550bb0ab5960e.png", 3)
+)
+
+ggplot(labs, aes(x, y)) +
+  geom_image(aes(image = i), size = 0.25, by = "height") +
+  geom_label(
+    aes(label = l), nudge_y = 0.03, fill = "grey90", family = "serif",
+    color = "black", fontface = "bold", size = 6, label.size = NA) +
+  scale_x_continuous(expand = c(0,0), limits = c(1, 3)) +
+  scale_y_continuous(expand = c(0,0), limits = c(0.9, 1.1)) +
+  theme_nothing() +
+  theme(plot.margin=unit(c(-0.30,0,-0.35,0), "null"))
+```
+
+1. *Layouts* contain the vertical and horizontal placement of the nodes, giving them a physical placement. In spatial terms, they contain the coordinates of where each node should be mapped. 
+
+2. *Nodes* refer to which representation should the nodes have. And this really refers to which visual representation they should have, known in `ggplot2` as `geom`. Should they be points, tiles, voronoi polygons? `ggraph` contains a large list of node representations via `geom_node_*()`. 
+
+3. *Edges* refer to the way nodes are connected between each other visually. Again here we are talking about `ggplot2` geometries and the `geom_edge_*()` functions should give you a big pool of options to represent this. 
+
+Let's go through the possibilities to use these with `sfnetworks` also in these three steps.
+
+## 1. `layout_sf()`
+
+As mentioned before, a *layout* is basically the physical representation of where to place our nodes. The nice thing about `ggraph`, is that you can give your own customized layout. 
+
+In `sfnetworks` on the other hand, we have a spatial network consisting of nodes and edges. These interrelated objects are stored together as `sf` tibbles into an `sfnetwork` object. Since we have a nice integration with `sf`, we can extract the coordinates of our nodes as an X and Y list, which we can pass to `ggraph`. Let me give you a quick demo instead of all these words. I will illustrate this with the `roxel` dataset from `sfnetworks`.
+
+```{r}
+library(sfnetworks)
+library(sf)
+(net = as_sfnetwork(roxel, directed = F))
+net %>% st_coordinates() %>% head()
+```
+
+Now, how do we create a layout that does this automatically? Well here is a little helper function that will take care of that for you. It will put the X and Y coordinates of any `sfnetwork` object passed to it. 
+
+```{r}
+layout_sf = function(graph){
+  # Extract X and Y coordinates from the nodes
+  graph = activate(graph, "nodes")
+  x = sf::st_coordinates(graph)[,"X"]
+  y = sf::st_coordinates(graph)[,"Y"]
+  data.frame(x, y)
+}
+```
+
+How do we use it? Well, like this:
+
+```{r}
+library(ggraph, quietly = T)
+ggraph(net, layout = layout_sf)
+```
+
+Yes! That's it. You are probably looking now at a beautiful white canvas, but internally `ggraph` has already a plan for every node you will map next, let's see it in action in the next step.
+
+## 2. `geom_node_*()`
+
+The most obvious way to represent a node in space is with a point. This is how we would do it if we were plotting `POINT` geometries in space. With `ggraph` we can get that representation with `geom_node_point()`. Building on our previous plot:
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_node_point()
+```
+
+Oh yes, there are our nodes! But wait... If you are familiar with the `sfnetworks` vignettes, you might be thinking: *this looks distorted...* and yes, it does. 
+
+Unfortunately, `ggraph` does not know about CRS so it will accommodate your X and Y axes to the size of your plot. This is one of the reasons why some internal tweaks are needed in `ggraph` to make this work better. But for now a way to go around this is to use `coord_sf()`:
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_node_point() +
+  coord_sf(crs = st_crs(net))
+```
+
+Much better. Now, our plot also takes into consideration the CRS and places our nodes properly. 
+
+Now let's give some aesthetics to our plot. If you scroll back up, you will see that our nodes don't have attributes, other than their geometry, so what should we look at? What about the degree centrality of the node? This will assign the count of the adjacent edges of each of our nodes. We can do this with `centrality_degree()` function in `tidygraph`.
+
+A really nice feature about `ggraph` is that we don't need to go back to our original graph, mutate our network, save as a new object, and then call it again inside `ggraph()`. We can just call the function directly inside the `aes()`, where the calculation will be done on the fly! Read more about it [here!](https://ggraph.data-imaginist.com/articles/tidygraph.html#access-to-tidygraph-algorithms-in-ggraph-code-1)
+
+```{r}
+library(tidygraph, warn.conflicts = F, quietly = T)
+ggraph(net, layout = layout_sf) +
+  geom_node_point(aes(color = centrality_degree())) +
+  coord_sf(crs = st_crs(net))
+```
+
+Directly passing functions also work inside `facet_*()` functions. `sfnetworks` also has a couple of functions that can be evaluated in this way. To illustrate we can use `node_X`, which gives us the **X** coordinate of the nodes. 
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_node_point(aes(color = centrality_degree())) +
+  coord_sf(crs = st_crs(net)) +
+  facet_nodes(~node_X() > 7.535)
+```
+
+OK, probably not a real world case scenario, but it gives an overview of what can be done! 
+
+Let's move on to the final step, and connect these nodes to each other. 
+
+## 3. `geom_edge_*()`
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_sf(
+    data = st_as_sf(net, "edges"), 
+    aes(color = as.numeric(edge_azimuth()))
+  ) +
+  geom_node_point() +
+  # geom_node_point(aes(color = centrality_degree())) +
+  coord_sf(crs = st_crs(net))
+```
+
+
+# What can't be done?
+
+So yes, a lot can be done already, but as you may have noticed, there are certain things that just don't work yet with the current `ggraph` implementation. Here is a not at all comprehensive list of things that need some work:
+
+- The `layout_sf()` function I showed you above will not work when there are columns named `x` or `y`.
+- `ggraph()` does not consider the network CRS.
+- There is no way yet to plot spatially explicit edges.
+
+Remember that I mention a PR? Well, I am working there to fix these issues, some of them already have a fix, others don't. I would certainly appreciate any help I can get. I opened [an issue](https://github.com/thomasp85/ggraph/issues/275) to illustrate the progress of my PR. Basically I am stuck with understanding `ggproto` objects to allow an integration of edges in geographical space. 
+
+If you feel like exploring what I have got so far, install `ggraph` from my forked repo. Beware, this will replace the original `ggraph`, so do this under your own risk.
 
 ```{r, eval = F}
 remotes::install_github("loreabad6/ggraph")
 ```
 
-I opened [an issue](https://github.com/thomasp85/ggraph/issues/275) to illustrate the progress of my PR and to ask for some help going forward! Any contribution is really appreciated!
+# Show me more!
 
-As I keep working on my `ggraph` PR, I will illustrate the initial steps to integrate `sfnetworks` and `ggraph` for spatial network visualizations. 
+While testing my `ggraph` implementation, I started looking for some spatial network visualization examples done with R that I could recreate with my code. Here I will keep adding what I come up with. Bear in mind that most of these examples are created with `remotes::install_github("loreabad6/ggraph")`.
 
-## Using a custom layout in `ggraph`
+### Break Free from Plastic 
 
-`ggraph` works with three main concepts: layouts, nodes and edges. In [this entry](https://loreabad6.github.io/ggraph-spatial-examples/custom_layouts) I illustrate how to use a custom `ggraph` layout based on geographic coordinate reference systems to combine `sfnetwork` objects with spatially implicit edges with other `ggplot2` functions. 
-
-The data used here comes from the [Tidy Tuesday](https://github.com/rfordatascience/tidytuesday) weekly data project. This is week 5 of 2021 where we analyzed data from the "Break Free from Plastic" initiative. Have a look at the final plot:
+For week 5 of 2021 in the [Tidy Tuesday](https://github.com/rfordatascience/tidytuesday) weekly data project, we analyzed data from the "Break Free from Plastic" initiative. Here is a [step by step guide](https://github.com/loreabad6/TidyTuesday/blob/master/R/2021/week_05.md) on how to recreate the final plot.
 
 ![](https://raw.githubusercontent.com/loreabad6/TidyTuesday/master/plot/2021_week_05.png)
 
-If you are further interested, remember to check the [full entry here](https://loreabad6.github.io/ggraph-spatial-examples/custom_layouts).
-
-## More examples!
-
-Here are some plot examples using `remotes::install_github("loreabad6/ggraph")`. 
 
 ### Airports in the U.S.
 
-This example is inspired on this [wonderful blogpost on Network Visualization](https://kateto.net/sunbelt2019#overlaying-networks-on-geographic-maps), where I tried to recreate the last plot. 
+This example is inspired on this [wonderful blogpost on Network Visualization](https://kateto.net/sunbelt2019#overlaying-networks-on-geographic-maps), where I tried to recreate the last plot showing airport connections and visitors in the U.S. Here is the [code to reproduce](code/airports.R).
 
 ![](figs/us_airports.png)
 
-Code [here](code/airports.R).
