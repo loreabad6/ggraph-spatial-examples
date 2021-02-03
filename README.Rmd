@@ -117,7 +117,9 @@ Yes! That's it. You are probably looking now at a beautiful white canvas, but in
 
 ## 2. `geom_node_*()`
 
-The most obvious way to represent a node in space is with a point. This is how we would do it if we were plotting `POINT` geometries in space. With `ggraph` we can get that representation with `geom_node_point()`. Building on our previous plot:
+The most obvious way to represent a node in space is with a point. This is how we would do it if we were plotting `POINT` geometries in space. With `ggraph` we can get that representation with `geom_node_point()`. Note that other useful node representations in space might be using a label or text, we can achieve that with `geom_node_label()` and `geom_node_text()`, respectively.
+
+Building on our previous plot:
 
 ```{r}
 ggraph(net, layout = layout_sf) +
@@ -147,7 +149,7 @@ ggraph(net, layout = layout_sf) +
   coord_sf(crs = st_crs(net))
 ```
 
-Directly passing functions also work inside `facet_*()` functions. `sfnetworks` also has a couple of functions that can be evaluated in this way. To illustrate we can use `node_X`, which gives us the **X** coordinate of the nodes. 
+Directly passing functions also works inside `facet_*()` functions. `sfnetworks` has a couple of functions that can be evaluated in this way. To illustrate we can use `node_X`, which gives us the **X** coordinate of the nodes. 
 
 ```{r}
 ggraph(net, layout = layout_sf) +
@@ -162,17 +164,51 @@ Let's move on to the final step, and connect these nodes to each other.
 
 ## 3. `geom_edge_*()`
 
+Now comes the tricky part. When we are working with graph structures in, let's call it, "abstract" space, the connections between the nodes is basically drawing a line between each pair. Although `ggraph` has quite a long list to represent edges ([see here](https://ggraph.data-imaginist.com/reference/index.html#section-edges)), the connections that I find most useful for spatial networks are `geom_edge_link()` and `geom_edge_arc()`, which create a straight line or an arc between connected nodes.
+
 ```{r}
-ggraph(net, layout = layout_sf) +
-  geom_sf(
-    data = st_as_sf(net, "edges"), 
-    aes(color = as.numeric(edge_azimuth()))
-  ) +
+ggraph(net, layout_sf) +
+  geom_edge_arc() +
   geom_node_point() +
-  # geom_node_point(aes(color = centrality_degree())) +
   coord_sf(crs = st_crs(net))
 ```
 
+Yes, I bet you are thinking this could go to [accidental aRt](https://twitter.com/accidental__aRt). This geom can come in handy for some data visualizations, you can see it in action at [the end of this post](#show-me-more)!
+
+But now let's look at straight lines or *links* between our nodes. We can of course pass aesthetics to all the `geom_edge_*()` functions, which refer to edge attributes. Let's color our edges by the type of road:
+
+```{r}
+ggraph(net, layout_sf) +
+  geom_edge_link(aes(color = type)) +
+  geom_node_point(size = 0.75) +
+  coord_sf(crs = st_crs(net))
+```
+
+I know that for now you must be wondering: if we have a spatial set of edges with an explicit geometry, why are we just drawing plain lines? Well, remember I said this would be tricky? This is exactly what is missing from `ggraph` and the core of what I want to implement. 
+
+But, do not despair! I am here to show you some workarounds, not fully ideal but something to work with in the meantime. Let's remember that ggraph subclasses a `ggplot` object, so we can combine `ggplot2` functions, and any other package that extends the grammar of graphics. 
+
+We will resort to `geom_sf()` for now. We can plot the edges of our network, by extracting them as an `sf` object with the function `st_as_sf()`. We have implemented a shortcut that allows you to choose which element of the network (nodes or edges), you want to extract. 
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_sf(data = st_as_sf(net, "edges")) +
+  geom_node_point() +
+  coord_sf(crs = st_crs(net))
+```
+
+And there we go, a nice representation of a geospatial network! We can of course pass some aesthetics as well, for example an spatial edge predicate implemented in sfnetworks: `edge_circuity()`. You will see now that we can pass this predicates directly to the aesthetics inside `geom_sf()` and since our main object is a `ggraph` this expression will be evaluated in the network, pretty exciting!!
+
+```{r}
+ggraph(net, layout = layout_sf) +
+  geom_sf(
+    data = st_as_sf(net, "edges"), size = 0.8,
+    aes(color = as.numeric(edge_circuity()))
+  ) +
+  scale_color_viridis("Circuity") +
+  coord_sf(crs = st_crs(net))
+```
+And there you have it, a swift overview of how to use `ggraph` and `sfnetworks` together. 
 
 # What can't be done?
 
@@ -180,9 +216,32 @@ So yes, a lot can be done already, but as you may have noticed, there are certai
 
 - The `layout_sf()` function I showed you above will not work when there are columns named `x` or `y`.
 - `ggraph()` does not consider the network CRS.
-- There is no way yet to plot spatially explicit edges.
+- There is no way yet to plot spatially explicit edges inside ggraph.
 
-Remember that I mention a PR? Well, I am working there to fix these issues, some of them already have a fix, others don't. I would certainly appreciate any help I can get. I opened [an issue](https://github.com/thomasp85/ggraph/issues/275) to illustrate the progress of my PR. Basically I am stuck with understanding `ggproto` objects to allow an integration of edges in geographical space. 
+This last one comes with a couple more problems:
+
+### Multiple scales for the same aesthetic
+
+With `ggraph` one can give "color", "fill", "size", etc. aesthetics to both the nodes and the edges. In our current workaround this is not working so good. The plot will get rendered properly with the corresponding colors, but the legend does not know what to do, and will only use one of the scale elements, without a warning!
+
+```{r, error = T}
+ggraph(net, layout = layout_sf) +
+  geom_sf(data = st_as_sf(net, "edges"), aes(color = as.numeric(edge_circuity()))) +
+  geom_node_point(aes(color = centrality_betweenness())) +
+  coord_sf(crs = st_crs(net))
+```
+
+### Faceting edges
+
+Another missing stone is faceting by edges. This currently gives an error: 
+
+```{r, error = T, results = 'hide', fig.show = 'hide'}
+ggraph(net, layout = layout_sf) +
+  geom_sf(data = st_as_sf(net, "edges")) +
+  facet_edges(~type)
+```
+
+What to do then? Remember that I mention a PR? Well, I am working there to fix these issues, some of them already have a fix, others don't. I would certainly appreciate any help I can get. I opened [an issue](https://github.com/thomasp85/ggraph/issues/275) to illustrate the progress of my PR. Basically I am stuck with understanding `ggproto` objects to allow an integration of edges in geographical space. 
 
 If you feel like exploring what I have got so far, install `ggraph` from my forked repo. Beware, this will replace the original `ggraph`, so do this under your own risk.
 
@@ -199,7 +258,6 @@ While testing my `ggraph` implementation, I started looking for some spatial net
 For week 5 of 2021 in the [Tidy Tuesday](https://github.com/rfordatascience/tidytuesday) weekly data project, we analyzed data from the "Break Free from Plastic" initiative. Here is a [step by step guide](https://github.com/loreabad6/TidyTuesday/blob/master/R/2021/week_05.md) on how to recreate the final plot.
 
 ![](https://raw.githubusercontent.com/loreabad6/TidyTuesday/master/plot/2021_week_05.png)
-
 
 ### Airports in the U.S.
 
