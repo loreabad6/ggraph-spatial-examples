@@ -1,0 +1,851 @@
+---
+title: "`sfnetworks`\nshowcase"
+output:
+  xaringan::moon_reader:
+    includes:
+      after_body: insert-logo.html
+    css: xaringan-themer.css
+    lib_dir: libs
+    nature:
+      beforeInit: ["macro.js"]
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: 4:3
+editor_options: 
+  chunk_output_type: console
+---
+class: center, middle, hide-logo
+
+```{r setup, include = F}
+options(width = 70)
+knitr::opts_chunk$set(
+  dev.args = list(bg = 'transparent'), 
+  fig.width = 12, message = TRUE, fig.showtext = TRUE,
+  warning = FALSE, comment = "", fig.retina = 3
+)
+par(mar = rep(0, 4), omar = rep(0,4))
+knitr::opts_knit$set(global.par = TRUE)
+knitr::knit_hooks$set(crop = knitr::hook_pdfcrop)
+# remotes::install_github("luukvdmeer/sfnetworks")
+library(xaringanthemer)
+library(sfnetworks)
+library(sf)
+library(tidygraph)
+library(tidyverse)
+library(TSP)
+library(dbscan)
+library(igraph)
+library(ggplot2)
+# remotes::install_github("loreabad6/ggraph")
+library(ggraph)
+library(patchwork)
+```
+
+```{r xaringan-themer, include = F}
+style_mono_accent(
+  # hex color should be provided, or theme_xaringan doesn't work
+  base_color = '#ffa500', #orange
+  title_slide_background_image = "figs/milano.png",
+  header_color = "#000000",
+  header_h1_font_size = "5em",
+  header_h2_font_size = "3em",
+  header_h3_font_size = "2em",
+  # background_image = "figs/milano_bg.png",
+  code_font_size = '14px',
+  white_color = "#fffaf0",
+  text_slide_number_color = '#fffaf0', 
+  link_color = '#ff4500', #orangered  
+  footnote_font_size = '0.5em',
+  footnote_position_bottom = "30px",
+  code_highlight_color = "#ffedcc", #faded-orange
+  extra_css = list(
+    ".pull-left-70" = list("float" = "left", "width" = "65.8%"),
+    ".pull-right-30" = list("float" = "right", "width" = "28.2%"),
+    ".pull-left-30" = list("float" = "left", "width" = "28.2%"),
+    ".pull-right-70" = list("float" = "right", "width" = "65.8%"),
+    ".orange" = list("color" = "#ffa500"),
+    ".note" = list("font-size" = "0.8em", "position" = "absolute", 
+      "bottom" = "30px", "padding-right" = "4em")
+  )
+)
+```
+
+```{r ggplottheme, include = F}
+themeX = theme_set(theme_xaringan(
+  text_font_size = 22, title_font_size = 26
+))
+themeV = theme_set(ggraph::theme_graph())
+theme_set(themeV)
+theme_update(
+  axis.ticks = element_blank(),
+  panel.grid = element_blank(),
+  axis.text = element_blank(),
+  legend.background = element_rect(color = NA, fill = "transparent"),
+  panel.background = element_rect(fill = "transparent", color = NA),
+  plot.background = element_rect(fill = "transparent", color = NA),
+  legend.title = element_text(size = 26),
+  legend.text = element_text(size = 22)
+)
+```
+
+.pull-left[
+![:scale 38%](figs/sf.png)
+]
+
+.pull-right[
+![:scale 38%](https://raw.githubusercontent.com/thomasp85/tidygraph/master/man/figures/logo.png)
+]
+
+.center[
+![:scale 20%](https://raw.githubusercontent.com/luukvdmeer/sfnetworks/master/man/figures/logo.png)
+]
+
+---
+class: middle
+
+```{r clean1, include = F}
+p1 = st_point(c(0, 1))
+p2 = st_point(c(1, 1))
+p3 = st_point(c(2, 1))
+p4 = st_point(c(3, 1))
+p5 = st_point(c(4, 1))
+p6 = st_point(c(3, 2))
+p7 = st_point(c(3, 0))
+p8 = st_point(c(4, 3))
+p9 = st_point(c(4, 2))
+p10 = st_point(c(4, 0))
+p11 = st_point(c(5, 2))
+p12 = st_point(c(5, 0))
+p13 = st_point(c(5, -1))
+p14 = st_point(c(5.8, 1))
+p15 = st_point(c(6, 1.2))
+p16 = st_point(c(6.2, 1))
+p17 = st_point(c(6, 0.8))
+p18 = st_point(c(6, 2))
+p19 = st_point(c(6, -1))
+p20 = st_point(c(7, 1))
+
+l1 = st_sfc(st_linestring(c(p1, p2, p3)))
+l2 = st_sfc(st_linestring(c(p3, p4, p5)))
+l3 = st_sfc(st_linestring(c(p6, p4, p7)))
+l4 = st_sfc(st_linestring(c(p8, p11, p9)))
+l5 = st_sfc(st_linestring(c(p9, p5, p10)))
+l6 = st_sfc(st_linestring(c(p8, p9)))
+l7 = st_sfc(st_linestring(c(p10, p12, p13, p10)))
+l8 = st_sfc(st_linestring(c(p5, p14)))
+l9 = st_sfc(st_linestring(c(p15, p14)))
+l10 = st_sfc(st_linestring(c(p16, p15)))
+l11 = st_sfc(st_linestring(c(p14, p17)))
+l12 = st_sfc(st_linestring(c(p17, p16)))
+l13 = st_sfc(st_linestring(c(p15, p18)))
+l14 = st_sfc(st_linestring(c(p17, p19)))
+l15 = st_sfc(st_linestring(c(p16, p20)))
+
+lines = c(l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15)
+
+net = as_sfnetwork(lines)
+
+simple = net %>%
+  activate("edges") %>%
+  arrange(edge_length()) %>%
+  filter(!edge_is_multiple()) %>%
+  filter(!edge_is_loop())
+
+subdivision = convert(simple, to_spatial_subdivision)
+
+smoothed = convert(subdivision, to_spatial_smooth)
+
+# Retrieve the coordinates of the nodes.
+node_coords = smoothed %>%
+  activate("nodes") %>%
+  st_coordinates()
+
+# Cluster the nodes with the DBSCAN spatial clustering algorithm.
+# We set eps = 0.5 such that:
+# Nodes within a distance of 0.5 from each other will be in the same cluster.
+# We set minPts = 1 such that:
+# A node is assigned a cluster even if it is the only member of that cluster.
+clusters = dbscan(node_coords, eps = 0.5, minPts = 1)$cluster 
+
+# Add the cluster information to the nodes of the network.
+clustered = smoothed %>%
+  activate("nodes") %>%
+  mutate(cls = clusters)
+
+clustered = clustered %>%
+  mutate(cmp = group_components())
+
+contracted = convert(clustered, to_spatial_contracted, cls, cmp, simplify = TRUE)
+```
+
+```{r, include = F}
+ggraph_toy_network = function(graph) {
+  graph %>% 
+    activate("edges") %>% 
+    mutate(id = as.factor(1:ecount(graph))) %>% 
+    ggraph(layout = "sf") +
+    geom_edge_sf(aes(color = id), size = 3) +
+    geom_node_point(
+      color = "black", fill = "white", 
+      stroke = 2, size = 6, shape = 21
+    )  +
+    scale_edge_color_manual(
+      values = ggsci::pal_igv(palette = "default")(ecount(graph))
+    )
+}
+```
+
+### From sf linestrings...
+
+```{r, echo = F}
+st_sf(id = as.factor(1:length(lines)), lines) %>% 
+  ggplot() +
+  geom_sf(aes(color = id), size = 3, show.legend = F) +
+  ggsci::scale_color_igv(palette = "default")
+```
+
+---
+class: middle
+### To network representations!
+
+```{r clean2, echo = F}
+ggraph_toy_network(net)
+```
+
+---
+class: middle, center
+## Network cleaning
+
+---
+class: middle
+### Initial network
+
+```{r clean0, echo = F}
+ggraph_toy_network(net)
+```
+
+---
+class: middle
+### Simplifying edges
+
+```{r clean3, echo = F}
+ggraph_toy_network(simple)
+```
+
+---
+class: middle
+### Subdividing edges
+
+```{r clean4, echo = F}
+ggraph_toy_network(subdivision)
+```
+
+---
+class: middle
+### Removing pseudo-nodes
+
+```{r clean5, echo = F}
+ggraph_toy_network(smoothed)
+```
+
+---
+class: middle
+### Simplifying intersections
+
+```{r clean6, echo = F}
+ggraph_toy_network(contracted)
+```
+
+---
+class: middle, center
+## Spatial joins
+
+---
+class: middle
+### Blending points into a network
+```{r, include = F}
+node1 = st_point(c(0, 0))
+node2 = st_point(c(1, 0))
+edge = st_sfc(st_linestring(c(node1, node2)))
+
+net = as_sfnetwork(edge)
+
+pois = data.frame(poi_type = c("bakery", "butcher"),
+                  x = c(0, 0.6), y = c(0.1, 0.1)) %>%
+  st_as_sf(coords = c("x", "y"))
+
+blended = st_network_blend(net, pois)
+```
+
+```{r, include = F}
+g = ggraph(blended, "sf") +
+  geom_edge_sf(size = 4, color = "grey50") +
+  geom_node_point(
+    aes(filter = centrality_degree(mode = "all") == 1),
+    color = "black", fill = "grey90", shape = 21, stroke = 3, size = 8
+  )
+```
+
+```{r, echo = F}
+(g1 = g +
+  geom_sf(
+    data = pois, aes(fill = poi_type),
+    color = "black", shape = 21, stroke = 3, size = 8,
+    show.legend = F
+  ) +
+  scale_fill_manual(values = c("orange", "purple"), na.value = "grey90") +
+  scale_y_continuous(expand = c(0.1,0.1))
+)
+
+```
+
+---
+class: middle
+### Blending points into a network
+```{r, echo = F}
+g1 +
+  geom_node_point(
+    aes(fill = poi_type), 
+    color = "black", shape = 21, stroke = 3, size = 8,
+    show.legend = F
+  ) 
+```
+
+---
+class: middle
+### Joining two networks
+
+```{r, include = F}
+node3 = st_point(c(1, 1))
+node4 = st_point(c(0, 1))
+edge2 = st_sfc(st_linestring(c(node2, node3)))
+edge3 = st_sfc(st_linestring(c(node3, node4)))
+
+net = as_sfnetwork(c(edge, edge2)) %>% 
+  activate("edges") %>% 
+  mutate(net = "A")
+other_net = as_sfnetwork(c(edge2, edge3)) %>% 
+  activate("edges") %>% 
+  mutate(net = "B")
+
+joined = st_network_join(net, other_net) 
+
+joined2 = joined %>% 
+  mutate(net = "C", full = "To one joined network") %>% 
+  st_network_join(joined) %>% 
+  mutate(full = replace_na(full, "From two networks"))
+```
+
+```{r, echo = F}
+ggraph(joined, "sf") +
+  geom_edge_link(width = 3, aes(linetype = net, color = net)) +
+  geom_node_point(
+    size = 8, shape = 21, stroke = 3,
+    color = "black", fill = "White"
+  ) +
+  scale_edge_color_manual(
+    "Network", 
+    values = c("orangered", "purple")
+  ) +
+  scale_edge_linetype_manual(
+    values = c("solid", "dashed"), 
+    guide = F
+  ) 
+```
+
+---
+class: middle
+### Joining two networks
+
+```{r, echo = F}
+ggraph(joined2, "sf") +
+  geom_edge_link(
+    width = 3, 
+    aes(filter = net == "C", color = net)
+  ) +
+  geom_node_point(
+    size = 8, shape = 21, stroke = 3,
+    color = "black", fill = "White"
+  ) +
+  scale_edge_color_manual(
+    "Network", 
+    values = c("#6f9445")
+  ) 
+```
+
+---
+class: middle
+### Joining spatial information
+
+```{r, include = F}
+net = as_sfnetwork(roxel) %>%
+  st_transform(3035)
+
+codes = net %>%
+  st_make_grid(n = c(2, 2)) %>%
+  st_as_sf() %>%
+  mutate(post_code = as.character(seq(1000, 1000 + n() * 10 - 10, 10)))
+
+joined = net %N>% 
+  st_join(codes, join = st_intersects) %E>% 
+  st_join(codes, join = st_intersects) 
+```
+
+```{r, include = F}
+g = ggraph(joined, "sf") +
+  scale_color_manual(
+    "Postal\nCodes",
+    values = RColorBrewer::brewer.pal(4, "Dark2"),
+    aesthetics = c("color", "fill", "edge_color")
+  )
+
+g1 = g +
+  geom_edge_sf(color = "grey10")
+
+g2 = g +
+  geom_edge_sf(color = "grey10") +
+  geom_sf(data = codes, aes(fill = post_code), alpha = 0.5)
+
+g3 = g +
+  geom_edge_sf(aes(color = post_code), show.legend = F) +
+  geom_node_point(aes(color = post_code), size = 4)
+
+dim_g = get_dim(g2)
+```
+
+```{r, echo = F}
+g1al = set_dim(g1, dim_g)
+plot(g1al)
+```
+
+---
+class: middle
+### Joining spatial information
+
+```{r, echo = F}
+g2al = set_dim(g2, dim_g)
+plot(g2al)
+```
+
+---
+class: middle
+### Joining spatial information
+
+```{r, echo = F}
+g3al = set_dim(g3, dim_g)
+plot(g3al)
+```
+
+---
+class: middle, center
+## Spatial filters
+
+---
+class: middle
+### Filtering by spatial predicates
+
+```{r, include = F}
+p1 = st_point(c(4151358, 3208045))
+p2 = st_point(c(4151340, 3207520))
+p3 = st_point(c(4151756, 3207506))
+p4 = st_point(c(4151774, 3208031))
+
+poly = st_multipoint(c(p1, p2, p3, p4)) %>%
+  st_cast("POLYGON") %>%
+  st_sfc(crs = 3035)
+```
+
+```{r, echo = F}
+(g = ggraph(net, "sf") +
+  geom_edge_sf(color = "grey10"))
+```
+
+---
+class: middle
+### Filtering by spatial predicates
+
+```{r, echo = F}
+(g1 = g +
+   geom_sf(data = poly, color = "purple", size = 2, fill = NA)
+   )
+```
+
+---
+class: middle
+### Filtering by spatial predicates
+
+```{r, echo = F}
+g1 +
+  geom_edge_sf(
+    aes(filter = edge_intersects(poly)), 
+    color = "orange",
+    size = 2
+  ) 
+```
+
+---
+class: middle
+### Filtering by spatial predicates
+
+```{r, echo = F}
+ggraph(net, "sf") +
+  geom_edge_sf(
+    aes(filter = edge_intersects(poly)), 
+    size = 2, color = "orange"
+  ) +
+  geom_node_point(
+    color = "orange", size = 5,
+    aes(filter = node_intersects(poly))
+  )
+```
+
+---
+class: middle, center
+## Routing applications
+
+---
+class: middle
+### Shortest path calculations
+
+```{r, include = F}
+net = as_sfnetwork(roxel, directed = FALSE) %>%
+  st_transform(3035) %>%
+  activate("edges") %>%
+  mutate(weight = edge_length())
+
+net_paths = net %>% 
+  morph(to_spatial_shortest_paths, 495, c(458, 121)) %>% 
+  activate("nodes") %>% 
+  mutate(in_path = TRUE) %>% 
+  activate("edges") %>% 
+  mutate(in_path = TRUE) %>% 
+  unmorph() %>% 
+  activate("nodes") %>% 
+  mutate(in_path = replace_na(in_path, FALSE)) %>% 
+  mutate(from_to_nodes = row_number() %in% c(495, 121, 458)) %>% 
+  activate("edges") %>% 
+  mutate(in_path = replace_na(in_path, FALSE)) 
+```
+
+
+```{r, echo = F}
+(g = ggraph(net_paths, layout = 'sf') +
+  geom_edge_sf(color = 'grey10'))
+```
+
+---
+class: middle
+### Shortest path calculations
+```{r, echo = F}
+(g1 = g + geom_node_point(
+    aes(filter = from_to_nodes), 
+    color = 'orange', size = 8
+  ))
+```
+
+---
+class: middle
+### Shortest path calculations
+```{r, echo = F}
+g1 +
+  geom_node_point(
+    color = 'orangered', size = 4, 
+    aes(filter = in_path)
+  ) +
+  geom_edge_sf(color = 'orangered', size = 2, aes(filter = in_path))
+```
+
+---
+class: middle
+### Closest facility analysis
+```{r, include = F}
+set.seed(128)
+hull = net %>%
+  activate("nodes") %>%
+  st_geometry() %>%
+  st_combine() %>%
+  st_convex_hull()
+
+sites = st_sample(hull, 50, type = "random")
+facilities = st_sample(hull, 5, type = "random")
+
+new_net = net %>%
+  activate("nodes") %>%
+  filter(group_components() == 1) %>%
+  st_network_blend(c(sites, facilities))
+
+cost_matrix = st_network_cost(new_net, from = sites, to = facilities)
+
+# Find for each site which facility is closest.
+closest = facilities[apply(cost_matrix, 1, function(x) which(x == min(x))[1])]
+# Create a line between each site and its closest facility, for visualization.
+draw_lines = function(sources, targets) {
+  lines = mapply(
+    function(a, b) st_sfc(st_cast(c(a, b), "LINESTRING"), crs = st_crs(net)), 
+    sources, 
+    targets, 
+    SIMPLIFY = FALSE
+  )
+  do.call("c", lines)
+}
+
+connections = draw_lines(sites, closest)
+```
+
+```{r, echo = F}
+(g3 = ggraph(new_net, layout = 'sf') +
+  geom_edge_sf(color = 'grey10'))
+```
+
+---
+class: middle
+### Closest facility analysis
+```{r, echo = F}
+(g4 = g3 +
+  geom_sf(data = sites, color = "orange", size = 4))
+```
+
+---
+class: middle
+### Closest facility analysis
+```{r, echo = F}
+(g5 = g4 +
+  geom_sf(data = facilities, color = "purple", size = 8))
+```
+
+---
+class: middle
+### Closest facility analysis
+```{r, echo = F}
+g5 +
+  geom_sf(data = connections, color = "orange", size = 2, alpha = 0.7) 
+```
+
+---
+class: middle
+### Route optimization
+```{r, include = F}
+set.seed(403)
+rdm = net %>%
+  st_bbox() %>%
+  st_as_sfc() %>%
+  st_sample(10, type = "random")
+
+net = activate(net, "nodes")
+cost_matrix = st_network_cost(net, from = rdm, to = rdm)
+
+# Use nearest node indices as row and column names.
+rdm_idxs = st_nearest_feature(rdm, net)
+row.names(cost_matrix) = rdm_idxs
+colnames(cost_matrix) = rdm_idxs
+
+tour = solve_TSP(TSP(cost_matrix))
+tour_idxs = as.numeric(names(tour))
+
+# Define the nodes to calculate the shortest paths from.
+# Define the nodes to calculate the shortest paths to.
+# All based on the calculated order of visit.
+from_idxs = tour_idxs
+to_idxs = c(tour_idxs[2:length(tour_idxs)], tour_idxs[1])
+
+# Calculate the specified paths.
+tsp_paths = mapply(st_network_paths, 
+    from = from_idxs, 
+    to = to_idxs, 
+    MoreArgs = list(x = net)
+  )["node_paths", ] %>%
+  unlist(recursive = FALSE)
+
+net_tsp = net %>% 
+  activate("nodes") %>% 
+  mutate(in_path = NA) %>% 
+  activate("edges") %>% 
+  mutate(in_path = NA)
+
+for (i in c(1:length(tsp_paths))) {
+  net_tsp = net_tsp %>% 
+    morph(
+      to_subgraph,
+      row_number() %in% tsp_paths[[i]],
+      subset_by = "nodes"
+    ) %>%
+    activate("nodes") %>% 
+    mutate(in_path = TRUE) %>% 
+    activate("edges") %>%
+    mutate(in_path = TRUE) %>%
+    unmorph() 
+}
+
+net_tsp = net_tsp %>% 
+  activate("nodes") %>% 
+  mutate(in_path = replace_na(in_path, FALSE)) %>% 
+  activate("edges") %>% 
+  mutate(in_path = replace_na(in_path, FALSE))
+```
+
+```{r, echo = F}
+(g1 = ggraph(net_tsp, layout = "sf") +
+  geom_edge_sf(color = 'grey10'))
+```
+
+---
+class: middle
+### Route optimization
+
+```{r, echo = F}
+(g2 = g1 +
+  geom_sf(data = rdm, size = 6, color = "purple"))
+```
+
+---
+class: middle
+### Route optimization
+
+```{r, echo = F}
+g2 +
+  geom_node_point(
+    color = 'orange', size = 4, 
+    aes(filter = in_path)
+  ) +
+  geom_edge_sf(color = 'orange', size = 2, aes(filter = in_path))
+```
+
+---
+class: middle
+### Spatial neighborhoods
+
+```{r, include = F}
+# How many edge types are there?
+types = net %>%
+  activate("edges") %>%
+  pull(type) %>%
+  unique()
+
+# Randomly define a walking speed in m/s for each type.
+# With values between 3 and 7 km/h.
+set.seed(1)
+speeds = runif(length(types), 3 * 1000 / 60 / 60, 7 * 1000 / 60 / 60)
+
+# Assign a speed to each edge based on its type.
+# Calculate travel time for each edge based on that.
+net = net %>%
+  activate("edges") %>%
+  group_by(type) %>%
+  mutate(speed = units::set_units(speeds[cur_group_id()], "m/s")) %>%
+  mutate(time = weight / speed) %>%
+  ungroup()
+
+p = net %>%
+  st_geometry() %>%
+  st_combine() %>%
+  st_centroid()
+
+thresholds = seq(900, 120, -120)
+
+nbh = net %>% 
+  activate("edges") %>% 
+  mutate(neigh = NA) %>% 
+  activate("nodes") %>% 
+  mutate(neigh = NA)
+
+for (i in c(1:length(thresholds))) {
+  neigh = as.character(thresholds[i])
+  nbh = nbh %>% 
+    activate('edges') %>% 
+    morph(to_spatial_neighborhood, p, thresholds[i], weights = 'time') %>% 
+    mutate(neigh = units::as_units(thresholds[i]/60, 'min')) %>% 
+    activate("nodes") %>% 
+    mutate(neigh = units::as_units(thresholds[i]/60, 'min')) %>% 
+    unmorph()
+}              
+```
+
+```{r, include = F}
+g = ggraph(nbh, "sf") +
+  geom_edge_sf(color = "grey10")
+g1 = g +
+  geom_sf(
+    data = p,
+    shape = 21, size = 10, stroke = 6,
+    color = 'black', fill = "white"
+  )
+g2 = g +
+  geom_edge_sf(
+    size = 2,
+    aes(color = as.numeric(neigh)),
+    show.legend = F
+  ) +
+  geom_node_point(
+    size = 4,
+    aes(color = as.numeric(neigh)),
+    show.legend = T
+  ) +
+  scale_color_viridis(
+    "Walking\ndistance [min]", 
+    option = "A", na.value = NA, end = 0.8,
+    guide = guide_colorbar(
+      title.position = "top", 
+      direction = "horizontal",
+      barwidth = grid::unit(60, 'mm'),
+      
+    )
+  ) +
+  scale_edge_color_viridis(option = "A", na.value = NA, end = 0.8) +
+  geom_sf(
+    data = p,
+    shape = 21, size = 10, stroke = 6,
+    color = 'black', fill = "white") 
+
+dim_g = get_dim(g2)
+```
+
+```{r, echo = F}
+g_al = set_dim(g, dim_g)
+plot(g_al)
+```
+
+---
+class: middle
+### Spatial neighborhoods
+
+```{r, echo = F}
+g1_al = set_dim(g1, dim_g)
+plot(g1_al)
+```
+
+---
+class: middle
+### Spatial neighborhoods
+
+```{r, echo = F}
+g2
+```
+---
+class: middle, hide-logo
+
+.center[
+![:scale 40%](https://raw.githubusercontent.com/luukvdmeer/sfnetworks/master/man/figures/logo.png)
+]
+
+#### Find out more at:
+
+https://luukvdmeer.github.io/sfnetworks/
+
+```{r, eval = F, include = F}
+pagedown::chrome_print(input = "code/sfnetworks-showcase/index.html")
+
+# then create gif as follows
+magick::image_read_pdf(path = "code/sfnetworks-showcase/index.pdf", density = 100) %>% # create images
+  magick::image_write_gif(path = "figs/sfnetworks-showcase.gif", delay = 1) # images to gif
+```
+
+```{css, eval = TRUE, echo = FALSE}
+.remark-code{line-height: 1.5; font-size: 80%}
+
+@media print {
+  .has-continuation {
+    display: block;
+  }
+}
+```
