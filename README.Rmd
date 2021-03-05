@@ -25,11 +25,19 @@ Here is a [step by step guide](https://github.com/loreabad6/TidyTuesday/blob/mas
 
 ### Airports in the U.S.
 
-This example is inspired on this [wonderful blogpost on Network Visualization](https://kateto.net/sunbelt2019#overlaying-networks-on-geographic-maps), where I tried to recreate the last plot. 
+This example is inspired on this [wonderful blogpost on Network Visualization](https://kateto.net/sunbelt2019#overlaying-networks-on-geographic-maps) by Katherine Ognyanova, where I tried to recreate the last plot. 
 
 ![](figs/us_airports.png)
 
 Code [here](code/airports.R).
+
+### The fourth way of visualizing a graph on a map
+
+In his [very helpful blogpost](https://datascience.blog.wzb.eu/2018/05/31/three-ways-of-visualizing-a-graph-on-a-map/) Markus Neteler (@internaut) guides us through three different ways to plot a spatial graph on a map. With the `ggraph` and `sfnetworks` combination, we can add a fourth way!
+
+![](figs/graph_on_a_map.png)
+
+Code [here](code/graph-on-a-map.R).
 
 ### {sfnetworks} showcase
 
